@@ -223,12 +223,19 @@ def buildYambo(dic):
 
     return yamboDic
 
-def buildHFinput(fold,fname,exRL):
+def buildHFinput(fold,fname,exRL,firstbnd,lastbnd):
+    #QPkrange : QP generalized K(points) indices. The format is
+    #first k-point|last-kpoint|first-band|last-band|
+    #In the dictionary is saved as
+    #y[QPkrange] = [[firstk,lastk,firstbnd,lastbnd],'']
     y = YamboIn('yambo -x -V All',folder=fold)
-    y['EXXRLvcs'] = [1000*exRL,'mHa']
+    y['EXXRLvcs'] = [exRL,'Ha']
+    krange = y['QPkrange'][0][:2]
+    kbandrange = krange + [firstbnd,lastbnd]
+    y['QPkrange'] = [kbandrange,'']
     y.write(fold+'/'+fname)
 
-def buildHF(ydic,gcomp):
+def buildHF(ydic,gcomp,firstbnd,lastbnd):
     """
     Build the input file for a yambo HF computation and update the yambo dictionary
     with the paramters of the choosen HF computations. Note that the inputFile field
@@ -245,7 +252,7 @@ def buildHF(ydic,gcomp):
             jobname = 'hf_gComp'+str(ex)
             inpfile = 'hf_gComp'+str(ex)+'.in'
             outfile = 'o-hf_gComp'+str(ex)+'.hf'
-            buildHFinput(ydic[k][n]['folder'],inpfile,ex)
+            buildHFinput(ydic[k][n]['folder'],inpfile,ex,firstbnd,lastbnd)
             ydic[k][n]['hf'][ex]= {'inputFile':inpfile,
             'jobName':jobname,
             'outputFile':ydic[k][n]['folder']+'/'+jobname+'/'+outfile}
@@ -336,19 +343,23 @@ def getHFresults(ydic):
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EHF'],y['DFT'],y['HF'] = parserHFout(y['outputFile'])
 
-def buildCOHSEXinput(fold,fname,gcomp,wg,wn):
+def buildCOHSEXinput(fold,fname,gcomp,wg,wn,firstbnd,lastbnd):
     #-b static inverse dielectric matrix
     #-k kernel type: hartree
     #-g Dyson Equation solver (n)ewton
     #-p GW approximations (c)OHSEX
     y = YamboIn('yambo -b -k hartee -g n -p c -V All',folder=fold)
-    y['EXXRLvcs'] = [1000*gcomp,'mHa']
-    y['NGsBlkXs'] = [1000*wg,'mHa']
+    y['EXXRLvcs'] = [gcomp,'Ha']
+    y['NGsBlkXs'] = [wg,'Ha']
     wnInp = [1,wn]
     y['BndsRnXs'] = wnInp
+    krange = y['QPkrange'][0][:2]
+    kbandrange = krange + [firstbnd,lastbnd]
+    y['QPkrange'] = [kbandrange,'']
+    #print(y)
     y.write(fold+'/'+fname)
 
-def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds):
+def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds,firstbnd,lastbnd):
     """
     Build the input file for a yambo COHSEX computation and update the yambo dictionary
     with the paramters of the choosen computations. The keys of the ['cs'] dictionary
@@ -366,7 +377,7 @@ def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds):
                 jobname = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)
                 inpfile = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.in'
                 outfile = 'o-cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.qp'
-                buildCOHSEXinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wg,wn)
+                buildCOHSEXinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wg,wn,firstbnd,lastbnd)
                 ydic[kconv][n]['cs'][(wg,wn)]= {
                     'inputFile':inpfile,
                     'jobName':jobname,
