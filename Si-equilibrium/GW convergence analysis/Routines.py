@@ -218,7 +218,7 @@ def buildYambo(dic):
             else:
                 print 'yambo/'+folderName + ' already present'
 
-            #create the HF dic with folder key
+            #create the yambo dictionary with folder key
             yamboDic[k][n] = {'folder' : 'yambo/'+folderName}
 
     return yamboDic
@@ -228,7 +228,7 @@ def buildHFinput(fold,fname,exRL,firstbnd,lastbnd):
     #first k-point|last-kpoint|first-band|last-band|
     #In the dictionary is saved as
     #y[QPkrange] = [[firstk,lastk,firstbnd,lastbnd],'']
-    y = YamboIn('yambo -x -V All',folder=fold)
+    y = YamboIn('yambo -x -V RL',folder=fold)
     y['EXXRLvcs'] = [exRL,'Ha']
     krange = y['QPkrange'][0][:2]
     kbandrange = krange + [firstbnd,lastbnd]
@@ -318,8 +318,8 @@ def parserHFout(fname):
     BND = []
     E0 = []
     EHF = []
-    DFT = []
-    HF = []
+    DFT = [] #can be removed
+    HF = [] #can be removed
     for rows,l in enumerate(larray):
         KP.append(l[0])
         BND.append(l[1])
@@ -348,11 +348,11 @@ def buildCOHSEXinput(fold,fname,gcomp,wg,wn,firstbnd,lastbnd):
     #-k kernel type: hartree
     #-g Dyson Equation solver (n)ewton
     #-p GW approximations (c)OHSEX
-    y = YamboIn('yambo -b -k hartee -g n -p c -V All',folder=fold)
+    y = YamboIn('yambo -b -k hartee -g n -p c -V qp',folder=fold)
     y['EXXRLvcs'] = [gcomp,'Ha']
-    y['NGsBlkXs'] = [wg,'Ha']
+    y['NGsBlkXs'] = [wg,'Ha'] #credo sia NGsBlkXp...check!!!!!!!
     wnInp = [1,wn]
-    y['BndsRnXs'] = wnInp
+    y['BndsRnXs'] = wnInp #credo sia BndsRnXp...check!!!!!!!
     krange = y['QPkrange'][0][:2]
     kbandrange = krange + [firstbnd,lastbnd]
     y['QPkrange'] = [kbandrange,'']
@@ -429,5 +429,98 @@ def getCOHSEXresults(ydic,kconv):
 
     for y in ydic[kconv][n]['cs'].values():
             #print ind, y
+            print 'read file : ' + y['outputFile']
+            y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
+
+def modifyUseBandsString(fname):
+    with open(fname) as f:
+        lines = []
+        for l in f:
+            if l.startswith('#UseEbands'):
+                print 'removed # from UseBands field'
+                lines.append(l[1:])
+            else:
+                lines.append(l)
+    return lines
+
+def writeLines(fname,lines):
+    f = open(fname,'w')
+    for l in lines:
+        f.write(l)
+        f.close
+
+def activateUseBand(fname):
+    lines = modifyUseBandsString(fname)
+    writeLines(fname,lines)
+
+def buildCOHSEXWEinput(fold,fname,gcomp,wg,wn,gnbnds,firstbnd,lastbnd):
+    #-b static inverse dielectric matrix
+    #-k kernel type: hartree
+    #-g Dyson Equation solver (n)ewton
+    #-p GW approximations (c)OHSEX
+    y = YamboIn('yambo -b -k hartee -g n -p c -V all',folder=fold)
+    activateUseBand(fold+'/yambo.in')
+    y['EXXRLvcs'] = [gcomp,'Ha']
+    y['NGsBlkXs'] = [wg,'Ha']
+    y['BndsRnXs'] = [1,wn]
+    y['GbndRnge'] = [1,gnbnds]
+    krange = y['QPkrange'][0][:2]
+    kbandrange = krange + [firstbnd,lastbnd]
+    y['QPkrange'] = [kbandrange,'']
+    #print(y)
+    y.write(fold+'/'+fname)
+
+def buildCOHSEXWE(ydic,kconv,G0Gconv,wgconv,wnbndsconv,g0nb,firstbnd,lastbnd):
+    """
+    Build the input file for a yambo COHSEX (with empties) computation and update the yambo dictionary
+    with the paramters of the choosen computations. The keys of the ['cswe'] dictionary
+    contain the values of the parameter G0_nb.
+    Note that the inputFile field does not include the path of the file which is specified in
+    the folder field. This choice is due to the way in which yambo is called.
+    """
+    if kconv in ydic.keys():
+        nb = ydic[kconv].keys()
+        nb.sort()
+        n = nb[0] #use only the lowest value of nscf_nbnds
+        ydic[kconv][n]['cswe'] = {}
+        for gn in g0nb:
+            jobname = 'cswe_G0nb'+str(gn)
+            inpfile = 'cswe_G0nb'+str(gn)+'.in'
+            outfile = 'o-cswe_G0nb'+str(gn)+'.qp'
+            buildCOHSEXWEinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wgconv,wnbndsconv,gn,firstbnd,lastbnd)
+            ydic[kconv][n]['cswe'][gn]= {
+                'inputFile':inpfile,
+                'jobName':jobname,
+                'outputFile':ydic[kconv][n]['folder']+'/'+jobname+'/'+outfile}
+    else:
+        print 'k value %s is not present. Add this value to the nscf simulation list'%k
+
+def runCOHSEXWE(ydic,kconv,nthreads,skip = False):
+    """
+    Run a bunch of CHOSEX simulations (without empties)
+    """
+    nb = ydic[kconv].keys()
+    nb.sort()
+    n = nb[0]
+    folder = ydic[kconv][n]['folder']
+    for y in ydic[kconv][n]['cswe'].values():
+        if skip:
+            if os.path.isfile(y['outputFile']):
+                print 'skip the computation for : '+y['outputFile']
+            else:
+                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+        else:
+            runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+
+def getCOHSEXWEresults(ydic,kconv):
+    """
+    Reads the output of the COHSEXWE calculations and add the appropriate fields in the yambo
+    dictionary
+    """
+    nb = ydic[kconv].keys()
+    nb.sort()
+    n = nb[0]
+
+    for y in ydic[kconv][n]['cswe'].values():
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
