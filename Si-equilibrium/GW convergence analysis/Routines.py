@@ -66,6 +66,7 @@ def runPw(inputFile,outputFile,nthreads):
     runString =  "mpirun -np %d %s -inp %s > %s"%(nthreads,pw,inputFile,outputFile)
     print 'execute : '+runString
     os.system(runString)
+    print 'done!'
 
 def runScf(dic,nthreads,skip = False):
     """
@@ -228,8 +229,8 @@ def buildHFinput(fold,fname,exRL,firstbnd,lastbnd):
     #first k-point|last-kpoint|first-band|last-band|
     #In the dictionary is saved as
     #y[QPkrange] = [[firstk,lastk,firstbnd,lastbnd],'']
-    y = YamboIn('yambo -x -V RL',folder=fold)
-    y['EXXRLvcs'] = [exRL,'Ha']
+    y = YamboIn('yambo -x -V rl',folder=fold)
+    y['EXXRLvcs'] = [1000.0*exRL,'mHa']
     krange = y['QPkrange'][0][:2]
     kbandrange = krange + [firstbnd,lastbnd]
     y['QPkrange'] = [kbandrange,'']
@@ -269,6 +270,7 @@ def runYambo(folder,filename,jobname,nthreads):
     osString += "mpirun -np %d yambo -F %s -J %s -C %s"%(nthreads,filename,jobname,jobname)
     print 'execute : '+osString
     os.system(osString)
+    print 'done!'
 
 def runHF(ydic,nthreads,skip = False):
     """
@@ -318,16 +320,12 @@ def parserHFout(fname):
     BND = []
     E0 = []
     EHF = []
-    DFT = [] #can be removed
-    HF = [] #can be removed
     for rows,l in enumerate(larray):
         KP.append(l[0])
         BND.append(l[1])
         E0.append(l[2])
         EHF.append(l[3])
-        DFT.append(l[4])
-        HF.append(l[5])
-    return KP,BND,E0,EHF,DFT,HF
+    return KP,BND,E0,EHF
 
 def getHFresults(ydic):
     """
@@ -341,25 +339,24 @@ def getHFresults(ydic):
         n = nb[0]
         for y in ydic[k][n]['hf'].values():
             print 'read file : ' + y['outputFile']
-            y['KP'],y['BND'],y['E0'],y['EHF'],y['DFT'],y['HF'] = parserHFout(y['outputFile'])
+            y['KP'],y['BND'],y['E0'],y['EHF'] = parserHFout(y['outputFile'])
 
-def buildCOHSEXinput(fold,fname,gcomp,wg,wn,firstbnd,lastbnd):
+def buildCOHSEXinput(fold,fname,gcomp,wg,wn,firstk,lastk,firstbnd,lastbnd):
     #-b static inverse dielectric matrix
     #-k kernel type: hartree
     #-g Dyson Equation solver (n)ewton
     #-p GW approximations (c)OHSEX
     y = YamboIn('yambo -b -k hartee -g n -p c -V qp',folder=fold)
-    y['EXXRLvcs'] = [gcomp,'Ha']
-    y['NGsBlkXs'] = [wg,'Ha'] #credo sia NGsBlkXp...check!!!!!!!
-    wnInp = [1,wn]
-    y['BndsRnXs'] = wnInp #credo sia BndsRnXp...check!!!!!!!
-    krange = y['QPkrange'][0][:2]
-    kbandrange = krange + [firstbnd,lastbnd]
+    y['EXXRLvcs'] = [1000.0*gcomp,'mHa']
+    y['NGsBlkXs'] = [1000.0*wg,'mHa']
+    y['BndsRnXs'] = [1,wn]
+    #krange = y['QPkrange'][0][:2]
+    #kbandrange = krange + [firstbnd,lastbnd]
+    kbandrange = [firstk,lastk] + [firstbnd,lastbnd]
     y['QPkrange'] = [kbandrange,'']
-    #print(y)
     y.write(fold+'/'+fname)
 
-def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds,firstbnd,lastbnd):
+def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds,firstk,lastk,firstbnd,lastbnd):
     """
     Build the input file for a yambo COHSEX computation and update the yambo dictionary
     with the paramters of the choosen computations. The keys of the ['cs'] dictionary
@@ -377,7 +374,7 @@ def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds,firstbnd,lastbnd):
                 jobname = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)
                 inpfile = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.in'
                 outfile = 'o-cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.qp'
-                buildCOHSEXinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wg,wn,firstbnd,lastbnd)
+                buildCOHSEXinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wg,wn,firstk,lastk,firstbnd,lastbnd)
                 ydic[kconv][n]['cs'][(wg,wn)]= {
                     'inputFile':inpfile,
                     'jobName':jobname,
