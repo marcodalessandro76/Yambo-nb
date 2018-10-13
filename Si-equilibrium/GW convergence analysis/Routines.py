@@ -521,3 +521,72 @@ def getCOHSEXWEresults(ydic,kconv):
     for y in ydic[kconv][n]['cswe'].values():
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
+
+def buildPPinput(fold,fname,gcomp,wg,wn,gnbn,firstk,lastk,firstbnd,lastbnd):
+    #-d dynamical inverse dielectric matrix
+    #-k kernel type: hartree
+    #-g Dyson Equation solver (n)ewton
+    #-p GW approximations (p)pa
+    y = YamboIn('yambo -d -k hartee -g n -p p -V qp',folder=fold)
+    y['EXXRLvcs'] = [1000.0*gcomp,'mHa'] #check the name of these parameters
+    y['NGsBlkXp'] = [1000.0*wg,'mHa']
+    y['BndsRnXp'] = [1,wn]
+    y['GbndRnge'] = [1,gnbn]
+    kbandrange = [firstk,lastk] + [firstbnd,lastbnd]
+    y['QPkrange'] = [kbandrange,'']
+    y.write(fold+'/'+fname)
+
+def buildPP(ydic,kconv,G0Gconv,wgconv,wnbnconv,g0nb,firstk,lastk,firstbnd,lastbnd):
+    """
+    Build the input file for a yambo plasmon pole computation and update the yambo dictionary
+    with the paramters of the choosen computations. The keys of the ['pp'] dictionary
+    are paramterize the number of empty bands used to compute G0.
+    Note that the inputFile field does not include the path of the file which is specified in
+    the folder field. This choice is due to the way in which yambo is called.
+    """
+    if kconv in ydic.keys():
+        nb = ydic[kconv].keys()
+        nb.sort()
+        n = nb[0] #use only the lowest value of nscf_nbnds
+        ydic[kconv][n]['pp'] = {}
+        for gn in g0nb:
+            jobname = 'pp_G0nb'+str(gn)
+            inpfile = 'pp_G0nb'+str(gn)+'.in'
+            outfile = 'o-pp_G0nb'+str(gn)+'.qp'
+            buildPPinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wgconv,wnbnconv,gn,firstk,lastk,firstbnd,lastbnd)
+            ydic[kconv][n]['pp'][gn]= {
+                'inputFile':inpfile,
+                'jobName':jobname,
+                'outputFile':ydic[kconv][n]['folder']+'/'+jobname+'/'+outfile}
+    else:
+        print 'k value %s is not present. Add this value to the nscf simulation list'%k
+
+def runPP(ydic,kconv,nthreads,skip = False):
+    """
+    Run a bunch of plasmon pole simulations
+    """
+    nb = ydic[kconv].keys()
+    nb.sort()
+    n = nb[0]
+    folder = ydic[kconv][n]['folder']
+    for y in ydic[kconv][n]['pp'].values():
+        if skip:
+            if os.path.isfile(y['outputFile']):
+                print 'skip the computation for : '+y['outputFile']
+            else:
+                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+        else:
+            runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+
+def getPPresults(ydic,kconv):
+    """
+    Reads the output of the PP calculations and add the appropriate fields in the yambo
+    dictionary
+    """
+    nb = ydic[kconv].keys()
+    nb.sort()
+    n = nb[0]
+
+    for y in ydic[kconv][n]['pp'].values():
+            print 'read file : ' + y['outputFile']
+            y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
