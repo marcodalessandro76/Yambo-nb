@@ -107,7 +107,7 @@ def get_totalEnergy(file):
     energy = extractEnergy(energyString)
     return energy
 
-def nscfSimulation(dic,k,e,n):
+def nscfSimulation(dic,k,e,nb):
     """
     Manage the dictionary and write the input file for a single nscf
     simulation. To be called only from the buildNscf method
@@ -117,18 +117,18 @@ def nscfSimulation(dic,k,e,n):
     qe.electrons['diago_full_acc'] = ".true."
     qe.system['force_symmorphic'] = ".true."
     qe.electrons['conv_thr'] = 1e-8
-    qe.system['nbnd'] = n
+    qe.system['nbnd'] = nb
     qe.kpoints = [k,k,k]
     qe.system['ecutwfc'] = e
-    qe.control['prefix'] = "'nscf/output/k%s_nb%s'"%(k,n)
+    qe.control['prefix'] = "'nscf/output/k%s_nb%s'"%(k,nb)
 
-    fileName = 'k'+str(k)+'_nb'+str(n)
+    fileName = 'k'+str(k)+'_nb'+str(nb)
     qe.write('nscf/input/'+fileName+'.nscf')
 
-    dic[k][n] = {
+    dic[k] = {
         'inputFile' : 'nscf/input/'+fileName+'.nscf',
         'outputFile' : 'nscf/output/'+fileName+'.log',
-        'outFolder' : 'nscf/output/k%s_nb%s'%(k,n)+'.save'}
+        'outFolder' : 'nscf/output/k%s_nb%s'%(k,nb)+'.save'}
 
 def buildNscf(kpoints,nb,kconv,ecutconv):
     """
@@ -144,39 +144,34 @@ def buildNscf(kpoints,nb,kconv,ecutconv):
         os.mkdir('nscf/output')
     for k in kpoints:
         dic[k] = {}
-        for n in nb:
-            dic[k][n] = {}
-            #If the nscf.save folder is missing copy the scf.save folder associated to the converged scf computation and
-            #rename so to have the same name of the nscf run
-            if not os.path.isdir("nscf/output/k%s_nb%s.save"%(k,n)):
-                cpString = "cp -r scf/output/k%s_ecut%s.save nscf/output/"%(kconv,ecutconv)
-                print 'execute : '+cpString
-                os.system(cpString)
-                cpString = "mv  nscf/output/k%s_ecut%s.save nscf/output/k%s_nb%s.save"%(kconv,ecutconv,k,n)
-                print 'execute : '+cpString
-                os.system(cpString)
+        #If the nscf.save folder is missing copy the scf.save folder associated to the converged scf computation and
+        #rename so to have the same name of the nscf run
+        if not os.path.isdir("nscf/output/k%s_nb%s.save"%(k,nb)):
+            cpString = "cp -r scf/output/k%s_ecut%s.save nscf/output/"%(kconv,ecutconv)
+            print 'execute : '+cpString
+            os.system(cpString)
+            cpString = "mv  nscf/output/k%s_ecut%s.save nscf/output/k%s_nb%s.save"%(kconv,ecutconv,k,nb)
+            print 'execute : '+cpString
+            os.system(cpString)
 
-            nscfSimulation(dic,k,ecutconv,n)
+        nscfSimulation(dic,k,ecutconv,nb)
 
     return dic
 
 def runNscf(dic,nthreads,skip = False):
         """
-        Run a bunch of nscf simulation, one for each value of kpoints and nbnds
+        Run a bunch of nscf simulation, one for each value of kpoints
         """
         kval = dic.keys()
         kval.sort()
         for k in kval:
-            nb = dic[k].keys()
-            nb.sort()
-            for n in nb:
-                if skip:
-                    if os.path.isfile(dic[k][n]['outputFile']):
-                        print 'skip the computation for : '+dic[k][n]['outputFile']
-                    else:
-                        runPw(dic[k][n]['inputFile'],dic[k][n]['outputFile'],nthreads)
+            if skip:
+                if os.path.isfile(dic[k]['outputFile']):
+                    print 'skip the computation for : '+dic[k]['outputFile']
                 else:
-                    runPw(dic[k][n]['inputFile'],dic[k][n]['outputFile'],nthreads)
+                    runPw(dic[k]['inputFile'],dic[k]['outputFile'],nthreads)
+            else:
+                runPw(dic[k]['inputFile'],dic[k]['outputFile'],nthreads)
 
 def runP2y(dic):
     """
@@ -185,16 +180,14 @@ def runP2y(dic):
     kval = dic.keys()
     kval.sort()
     for k in kval:
-        nb = dic[k].keys()
-        nb.sort()
-        for n in nb:
-            osString = "cd %s;p2y;yambo"%dic[k][n]['outFolder']
-            print 'execute : '+osString
-            os.system(osString)
+        osString = "cd %s;p2y;yambo"%dic[k]['outFolder']
+        print 'execute : '+osString
+        os.system(osString)
 
 def nscfOutFolderSplit(val):
     out = val.partition('nscf/output/')[2]
-    out = out.partition('.save')[0]
+    #out = out.partition('.save')[0]
+    out = out.partition('_')[0]
     return out
 
 def buildYambo(dic):
@@ -204,22 +197,22 @@ def buildYambo(dic):
     """
     if not os.path.isdir('yambo'):
         os.mkdir('yambo')
+
     yamboDic = {}
     for k in dic:
         yamboDic[k] = {}
-        for n in dic[k]:
-            folderName = nscfOutFolderSplit(dic[k][n]['outFolder'])
-            if not os.path.isdir('yambo/'+folderName):
-                os.mkdir('yambo/'+folderName)
-                #copy the SAVE folder
-                osString = "cp -r %s/SAVE yambo/%s" %(dic[k][n]['outFolder'],folderName)
-                print 'execute : ' + osString
-                os.system(osString)
-            else:
-                print 'yambo/'+folderName + ' already present'
+        folderName = nscfOutFolderSplit(dic[k]['outFolder'])
+        if not os.path.isdir('yambo/'+folderName):
+            os.mkdir('yambo/'+folderName)
+            #copy the SAVE folder
+            osString = "cp -r %s/SAVE yambo/%s" %(dic[k]['outFolder'],folderName)
+            print 'execute : ' + osString
+            os.system(osString)
+        else:
+            print 'yambo/'+folderName + ' already present'
 
-            #create the yambo dictionary with folder key
-            yamboDic[k][n] = {'folder' : 'yambo/'+folderName}
+        #create the yambo dictionary with folder key
+        yamboDic[k] = {'folder' : 'yambo/'+folderName}
 
     return yamboDic
 
@@ -244,18 +237,15 @@ def buildHF(ydic,gcomp,firstbnd,lastbnd):
     """
     kpoints = ydic.keys()
     for k in kpoints:
-        nb = ydic[k].keys()
-        nb.sort()
-        n = nb[0]
-        ydic[k][n]['hf'] = {}
+        ydic[k]['hf'] = {}
         for ex in gcomp:
             jobname = 'hf_gComp'+str(ex)
             inpfile = 'hf_gComp'+str(ex)+'.in'
             outfile = 'o-hf_gComp'+str(ex)+'.hf'
-            makeHFinput(ydic[k][n]['folder'],inpfile,ex,firstbnd,lastbnd)
-            ydic[k][n]['hf'][ex]= {'inputFile':inpfile,
+            makeHFinput(ydic[k]['folder'],inpfile,ex,firstbnd,lastbnd)
+            ydic[k]['hf'][ex]= {'inputFile':inpfile,
             'jobName':jobname,
-            'outputFile':ydic[k][n]['folder']+'/'+jobname+'/'+outfile}
+            'outputFile':ydic[k]['folder']+'/'+jobname+'/'+outfile}
 
 def runYambo(folder,filename,jobname,nthreads):
     """
@@ -278,11 +268,8 @@ def runHF(ydic,nthreads,skip = False):
     kpoints = ydic.keys()
     kpoints.sort()
     for k in kpoints:
-        nb = ydic[k].keys()
-        nb.sort()
-        n = nb[0]
-        folder = ydic[k][n]['folder']
-        for y in ydic[k][n]['hf'].values():
+        folder = ydic[k]['folder']
+        for y in ydic[k]['hf'].values():
             if skip:
                 if os.path.isfile(y['outputFile']):
                     print 'skip the computation for : '+y['outputFile']
@@ -333,10 +320,7 @@ def getHFresults(ydic):
     """
     kpoints = ydic.keys()
     for k in kpoints:
-        nb = ydic[k].keys()
-        nb.sort()
-        n = nb[0]
-        for y in ydic[k][n]['hf'].values():
+        for y in ydic[k]['hf'].values():
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EHF'] = parserHFout(y['outputFile'])
 
@@ -362,20 +346,17 @@ def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds,firstk,lastk,firstbnd,lastbnd):
     the folder field. This choice is due to the way in which yambo is called.
     """
     if kconv in ydic.keys():
-        nb = ydic[kconv].keys()
-        nb.sort()
-        n = nb[0] #use only the lowest value of nscf_nbnds
-        ydic[kconv][n]['cs'] = {}
+        ydic[kconv]['cs'] = {}
         for wg in wgcomp:
             for wn in wnbnds:
                 jobname = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)
                 inpfile = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.in'
                 outfile = 'o-cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.qp'
-                makeCOHSEXinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wg,wn,firstk,lastk,firstbnd,lastbnd)
-                ydic[kconv][n]['cs'][(wg,wn)]= {
+                makeCOHSEXinput(ydic[kconv]['folder'],inpfile,G0Gconv,wg,wn,firstk,lastk,firstbnd,lastbnd)
+                ydic[kconv]['cs'][(wg,wn)]= {
                     'inputFile':inpfile,
                     'jobName':jobname,
-                    'outputFile':ydic[kconv][n]['folder']+'/'+jobname+'/'+outfile}
+                    'outputFile':ydic[kconv]['folder']+'/'+jobname+'/'+outfile}
     else:
         print 'k value %s is not present. Add this value to the nscf simulation list'%k
 
@@ -383,11 +364,8 @@ def runCOHSEX(ydic,kconv,nthreads,skip = False):
     """
     Run a bunch of CHOSEX simulations (without empties)
     """
-    nb = ydic[kconv].keys()
-    nb.sort()
-    n = nb[0]
-    folder = ydic[kconv][n]['folder']
-    for y in ydic[kconv][n]['cs'].values():
+    folder = ydic[kconv]['folder']
+    for y in ydic[kconv]['cs'].values():
         if skip:
             if os.path.isfile(y['outputFile']):
                 print 'skip the computation for : '+y['outputFile']
@@ -417,11 +395,7 @@ def getCOHSEXresults(ydic,kconv):
     Reads the output of the COHSEX calculations and add the appropriate fields in the yambo
     dictionary
     """
-    nb = ydic[kconv].keys()
-    nb.sort()
-    n = nb[0]
-
-    for y in ydic[kconv][n]['cs'].values():
+    for y in ydic[kconv]['cs'].values():
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
 
@@ -448,19 +422,16 @@ def buildPP(ydic,kconv,G0Gconv,wgconv,wnbnconv,g0nb,firstk,lastk,firstbnd,lastbn
     the folder field. This choice is due to the way in which yambo is called.
     """
     if kconv in ydic.keys():
-        nb = ydic[kconv].keys()
-        nb.sort()
-        n = nb[0] #use only the lowest value of nscf_nbnds
-        ydic[kconv][n]['pp'] = {}
+        ydic[kconv]['pp'] = {}
         for gn in g0nb:
             jobname = 'pp_G0nb'+str(gn)
             inpfile = 'pp_G0nb'+str(gn)+'.in'
             outfile = 'o-pp_G0nb'+str(gn)+'.qp'
-            makePPinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wgconv,wnbnconv,gn,firstk,lastk,firstbnd,lastbnd)
-            ydic[kconv][n]['pp'][gn]= {
+            makePPinput(ydic[kconv]['folder'],inpfile,G0Gconv,wgconv,wnbnconv,gn,firstk,lastk,firstbnd,lastbnd)
+            ydic[kconv]['pp'][gn]= {
                 'inputFile':inpfile,
                 'jobName':jobname,
-                'outputFile':ydic[kconv][n]['folder']+'/'+jobname+'/'+outfile}
+                'outputFile':ydic[kconv]['folder']+'/'+jobname+'/'+outfile}
     else:
         print 'k value %s is not present. Add this value to the nscf simulation list'%k
 
@@ -468,11 +439,8 @@ def runPP(ydic,kconv,nthreads,skip = False):
     """
     Run a bunch of plasmon pole simulations
     """
-    nb = ydic[kconv].keys()
-    nb.sort()
-    n = nb[0]
-    folder = ydic[kconv][n]['folder']
-    for y in ydic[kconv][n]['pp'].values():
+    folder = ydic[kconv]['folder']
+    for y in ydic[kconv]['pp'].values():
         if skip:
             if os.path.isfile(y['outputFile']):
                 print 'skip the computation for : '+y['outputFile']
@@ -486,11 +454,7 @@ def getPPresults(ydic,kconv):
     Reads the output of the PP calculations and add the appropriate fields in the yambo
     dictionary
     """
-    nb = ydic[kconv].keys()
-    nb.sort()
-    n = nb[0]
-
-    for y in ydic[kconv][n]['pp'].values():
+    for y in ydic[kconv]['pp'].values():
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
 
