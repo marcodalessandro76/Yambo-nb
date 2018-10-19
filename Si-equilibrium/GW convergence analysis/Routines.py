@@ -160,7 +160,6 @@ def buildNscf(kpoints,nb,kconv,ecutconv):
 
     return dic
 
-
 def runNscf(dic,nthreads,skip = False):
         """
         Run a bunch of nscf simulation, one for each value of kpoints and nbnds
@@ -224,7 +223,7 @@ def buildYambo(dic):
 
     return yamboDic
 
-def buildHFinput(fold,fname,exRL,firstbnd,lastbnd):
+def makeHFinput(fold,fname,exRL,firstbnd,lastbnd):
     #QPkrange : QP generalized K(points) indices. The format is
     #first k-point|last-kpoint|first-band|last-band|
     #In the dictionary is saved as
@@ -253,7 +252,7 @@ def buildHF(ydic,gcomp,firstbnd,lastbnd):
             jobname = 'hf_gComp'+str(ex)
             inpfile = 'hf_gComp'+str(ex)+'.in'
             outfile = 'o-hf_gComp'+str(ex)+'.hf'
-            buildHFinput(ydic[k][n]['folder'],inpfile,ex,firstbnd,lastbnd)
+            makeHFinput(ydic[k][n]['folder'],inpfile,ex,firstbnd,lastbnd)
             ydic[k][n]['hf'][ex]= {'inputFile':inpfile,
             'jobName':jobname,
             'outputFile':ydic[k][n]['folder']+'/'+jobname+'/'+outfile}
@@ -341,7 +340,7 @@ def getHFresults(ydic):
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EHF'] = parserHFout(y['outputFile'])
 
-def buildCOHSEXinput(fold,fname,gcomp,wg,wn,firstk,lastk,firstbnd,lastbnd):
+def makeCOHSEXinput(fold,fname,gcomp,wg,wn,firstk,lastk,firstbnd,lastbnd):
     #-b static inverse dielectric matrix
     #-k kernel type: hartree
     #-g Dyson Equation solver (n)ewton
@@ -350,8 +349,6 @@ def buildCOHSEXinput(fold,fname,gcomp,wg,wn,firstk,lastk,firstbnd,lastbnd):
     y['EXXRLvcs'] = [1000.0*gcomp,'mHa']
     y['NGsBlkXs'] = [1000.0*wg,'mHa']
     y['BndsRnXs'] = [1,wn]
-    #krange = y['QPkrange'][0][:2]
-    #kbandrange = krange + [firstbnd,lastbnd]
     kbandrange = [firstk,lastk] + [firstbnd,lastbnd]
     y['QPkrange'] = [kbandrange,'']
     y.write(fold+'/'+fname)
@@ -374,7 +371,7 @@ def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds,firstk,lastk,firstbnd,lastbnd):
                 jobname = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)
                 inpfile = 'cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.in'
                 outfile = 'o-cs_wGcomp'+str(wg)+'_wNb'+str(wn)+'.qp'
-                buildCOHSEXinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wg,wn,firstk,lastk,firstbnd,lastbnd)
+                makeCOHSEXinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wg,wn,firstk,lastk,firstbnd,lastbnd)
                 ydic[kconv][n]['cs'][(wg,wn)]= {
                     'inputFile':inpfile,
                     'jobName':jobname,
@@ -425,104 +422,10 @@ def getCOHSEXresults(ydic,kconv):
     n = nb[0]
 
     for y in ydic[kconv][n]['cs'].values():
-            #print ind, y
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
 
-def modifyUseBandsString(fname):
-    with open(fname) as f:
-        lines = []
-        for l in f:
-            if l.startswith('#UseEbands'):
-                print 'removed # from UseBands field'
-                lines.append(l[1:])
-            else:
-                lines.append(l)
-    return lines
-
-def writeLines(fname,lines):
-    f = open(fname,'w')
-    for l in lines:
-        f.write(l)
-        f.close
-
-def activateUseBand(fname):
-    lines = modifyUseBandsString(fname)
-    writeLines(fname,lines)
-
-def buildCOHSEXWEinput(fold,fname,gcomp,wg,wn,gnbnds,firstbnd,lastbnd):
-    #-b static inverse dielectric matrix
-    #-k kernel type: hartree
-    #-g Dyson Equation solver (n)ewton
-    #-p GW approximations (c)OHSEX
-    y = YamboIn('yambo -b -k hartee -g n -p c -V all',folder=fold)
-    activateUseBand(fold+'/yambo.in')
-    y['EXXRLvcs'] = [gcomp,'Ha']
-    y['NGsBlkXs'] = [wg,'Ha']
-    y['BndsRnXs'] = [1,wn]
-    y['GbndRnge'] = [1,gnbnds]
-    krange = y['QPkrange'][0][:2]
-    kbandrange = krange + [firstbnd,lastbnd]
-    y['QPkrange'] = [kbandrange,'']
-    #print(y)
-    y.write(fold+'/'+fname)
-
-def buildCOHSEXWE(ydic,kconv,G0Gconv,wgconv,wnbndsconv,g0nb,firstbnd,lastbnd):
-    """
-    Build the input file for a yambo COHSEX (with empties) computation and update the yambo dictionary
-    with the paramters of the choosen computations. The keys of the ['cswe'] dictionary
-    contain the values of the parameter G0_nb.
-    Note that the inputFile field does not include the path of the file which is specified in
-    the folder field. This choice is due to the way in which yambo is called.
-    """
-    if kconv in ydic.keys():
-        nb = ydic[kconv].keys()
-        nb.sort()
-        n = nb[0] #use only the lowest value of nscf_nbnds
-        ydic[kconv][n]['cswe'] = {}
-        for gn in g0nb:
-            jobname = 'cswe_G0nb'+str(gn)
-            inpfile = 'cswe_G0nb'+str(gn)+'.in'
-            outfile = 'o-cswe_G0nb'+str(gn)+'.qp'
-            buildCOHSEXWEinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wgconv,wnbndsconv,gn,firstbnd,lastbnd)
-            ydic[kconv][n]['cswe'][gn]= {
-                'inputFile':inpfile,
-                'jobName':jobname,
-                'outputFile':ydic[kconv][n]['folder']+'/'+jobname+'/'+outfile}
-    else:
-        print 'k value %s is not present. Add this value to the nscf simulation list'%k
-
-def runCOHSEXWE(ydic,kconv,nthreads,skip = False):
-    """
-    Run a bunch of CHOSEX simulations (without empties)
-    """
-    nb = ydic[kconv].keys()
-    nb.sort()
-    n = nb[0]
-    folder = ydic[kconv][n]['folder']
-    for y in ydic[kconv][n]['cswe'].values():
-        if skip:
-            if os.path.isfile(y['outputFile']):
-                print 'skip the computation for : '+y['outputFile']
-            else:
-                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
-        else:
-            runYambo(folder,y['inputFile'],y['jobName'],nthreads)
-
-def getCOHSEXWEresults(ydic,kconv):
-    """
-    Reads the output of the COHSEXWE calculations and add the appropriate fields in the yambo
-    dictionary
-    """
-    nb = ydic[kconv].keys()
-    nb.sort()
-    n = nb[0]
-
-    for y in ydic[kconv][n]['cswe'].values():
-            print 'read file : ' + y['outputFile']
-            y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
-
-def buildPPinput(fold,fname,gcomp,wg,wn,gnbn,firstk,lastk,firstbnd,lastbnd):
+def makePPinput(fold,fname,gcomp,wg,wn,gnbn,firstk,lastk,firstbnd,lastbnd):
     #-d dynamical inverse dielectric matrix
     #-k kernel type: hartree
     #-g Dyson Equation solver (n)ewton
@@ -553,7 +456,7 @@ def buildPP(ydic,kconv,G0Gconv,wgconv,wnbnconv,g0nb,firstk,lastk,firstbnd,lastbn
             jobname = 'pp_G0nb'+str(gn)
             inpfile = 'pp_G0nb'+str(gn)+'.in'
             outfile = 'o-pp_G0nb'+str(gn)+'.qp'
-            buildPPinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wgconv,wnbnconv,gn,firstk,lastk,firstbnd,lastbnd)
+            makePPinput(ydic[kconv][n]['folder'],inpfile,G0Gconv,wgconv,wnbnconv,gn,firstk,lastk,firstbnd,lastbnd)
             ydic[kconv][n]['pp'][gn]= {
                 'inputFile':inpfile,
                 'jobName':jobname,
@@ -576,7 +479,7 @@ def runPP(ydic,kconv,nthreads,skip = False):
             else:
                 runYambo(folder,y['inputFile'],y['jobName'],nthreads)
         else:
-            runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
 
 def getPPresults(ydic,kconv):
     """
@@ -590,3 +493,101 @@ def getPPresults(ydic,kconv):
     for y in ydic[kconv][n]['pp'].values():
             print 'read file : ' + y['outputFile']
             y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
+
+def makeYPPbandsInput(kfold,study,firstbnd,lastbnd,bands_step,path):
+    """"
+    kfold : the kpoint folder
+    study : the study associated to the chosen ndb.QP file
+    This function execute ypp -s b -V qp to produce the ypp.in. Then load the
+    input file in y with y = YamboIn(filename=fname), modifies the parameters
+    and execute ypp -s b -V qp again to produce the correct final file (called ypp.in)
+    """
+    # if ypp.in exists is removed
+    if os.path.isfile(kfold+'/ypp.in'):
+        osStr = "rm %s/ypp.in"%kfold
+        print 'remove file : '+osStr
+        os.system(osStr)
+    osStr = "cd %s; ypp -s b -V qp"%kfold
+    os.system(osStr)
+    fname = kfold+'/ypp.in'
+    y = YamboIn(filename=fname)
+    y['BANDS_steps'] = bands_step
+    kbandrange = y['QPkrange'][0][:2] + [firstbnd,lastbnd]
+    y['QPkrange'] = [kbandrange,'']
+    if study['jobName'] != 'lda':
+        dbname = study['jobName']+'/ndb.QP'
+        y['GfnQPdb'] = 'E < '+dbname
+    y['BKpts'] = path
+    y.write(fname)
+    os.system(osStr)
+
+def buildYPPbands(kfold,study,firstbnd,lastbnd,bands_step,path):
+    """"
+    Build the input file for ypp band calculation to be formed in the kpoints folder
+    kfold and associated to the type of computation given by the study variable
+    """
+    makeYPPbandsInput(kfold,study,firstbnd,lastbnd,bands_step,path)
+    sJname = study['jobName']
+    study['bnds'] = {'jobName' : sJname+'_bands' ,'outputFile' : 'o-'+sJname+'_bands.bands_interpolated'}
+
+def runYPP(kfold,filename,jobname,nthreads):
+    """
+    Run a single YPP computation and delete the jobname folder is exsists
+    """
+    jobDirPath = kfold+'/'+jobname
+    if os.path.isdir(jobDirPath):
+        print 'delete '+ jobDirPath
+        os.system("rm -r %s"%jobDirPath)
+    osString = "cd %s; mpirun -np %d ypp -F %s -J %s -C %s"%(kfold,nthreads,filename,jobname,jobname)
+    print 'execute : '+osString
+    os.system(osString)
+    print 'done!'
+
+def runYPPbands(kfold,study,nthreads = 1):
+    if 'bnds' in study:
+        jobname = study['bnds']['jobName']
+        runYPP(kfold,'ypp.in',jobname,nthreads)
+    else:
+        print "'bnds' key not found"
+
+def parserBandsResults(kfold,study,firstbnd,lastbnd):
+
+    studyfold = study['bnds']['jobName']
+    outf = study['bnds']['outputFile']
+    fname = kfold+'/'+studyfold+'/'+outf
+    print 'parsing file :'+fname
+    larray = parserArrayFromFile(fname)
+
+    numbands = lastbnd-firstbnd+1
+
+    kaxis = []
+    bndStructure = [[] for i in range(numbands)]
+    bndStructure
+    for rows,l in enumerate(larray):
+        kaxis.append(l[0])
+        for ind,b in enumerate(bndStructure):
+            b.append(l[ind+1])
+    study['bnds']['results'] = {'kaxis' : kaxis, 'bndStructure' : bndStructure}
+
+
+#######################################################################
+def modifyUseBandsString(fname):
+    with open(fname) as f:
+        lines = []
+        for l in f:
+            if l.startswith('#UseEbands'):
+                print 'removed # from UseBands field'
+                lines.append(l[1:])
+            else:
+                lines.append(l)
+    return lines
+
+def writeLines(fname,lines):
+    f = open(fname,'w')
+    for l in lines:
+        f.write(l)
+        f.close
+
+def activateUseBand(fname):
+    lines = modifyUseBandsString(fname)
+    writeLines(fname,lines)
