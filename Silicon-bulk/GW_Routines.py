@@ -469,8 +469,9 @@ def makeYPPbandsInput(kfold,study,firstbnd,lastbnd,bands_step,path):
     # if ypp.in exists is removed
     if os.path.isfile(kfold+'/ypp.in'):
         osStr = "rm %s/ypp.in"%kfold
-        print 'remove file : '+osStr
+        print "remove file : %s/ypp.in"%kfold
         os.system(osStr)
+    # run ypp -s b -V qp to build the input file
     osStr = "cd %s; ypp -s b -V qp"%kfold
     os.system(osStr)
     fname = kfold+'/ypp.in'
@@ -483,6 +484,7 @@ def makeYPPbandsInput(kfold,study,firstbnd,lastbnd,bands_step,path):
         y['GfnQPdb'] = 'E < '+dbname
     y['BKpts'] = path
     y.write(fname)
+    # run again ypp -s b -V qp
     os.system(osStr)
 
 def buildYPPbands(kfold,study,firstbnd,lastbnd,bands_step,path):
