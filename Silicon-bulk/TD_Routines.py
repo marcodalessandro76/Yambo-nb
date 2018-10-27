@@ -54,6 +54,26 @@ def fixSymm(kfold,fieldDirection):
         print 'fixSymm folder already created'
     return fixSymmFold
 
+def makeTDinput(fold,fname,fieldDirection,fieldInt,fieldFreq,fieldWidth,RTstep,NETime,RTbands):
+    y = YamboIn('yambo_rt -q p -v ip -V qp',folder=fold)
+    """
+    Build the input file for a TD simulation in the "independt particle" approximation.
+    Set the relevant parameters for the field and the simulation options.
+    """
+    # field paramters
+    y['Field1_kind'] = 'QSSIN'
+    y['Field1_pol'] = 'linear'
+    y['Field1_Dir'] = fieldDirection
+    y['Field1_Int'] = [fieldInt,'kWLm2']
+    y['Field1_Freq'] = [[fieldFreq,0.0],'eV']
+    y['Field1_Width'] = [fieldWidth,'fs']
+    # simulation parameters
+    y['IOtime'] = [[1.0,5.0,0.5],'fs'] #(J,P,CARRIERs - GF - OUTPUT)
+    y['RTstep'] = [RTstep,'as']
+    y['NETime'] = [NETime,'fs']
+    y['RTBands'] = RTbands
+    y.write(fold+'/'+fname)
+
 def runYambo_rt(folder,filename,jobname,nthreads):
     """
     Run a single Yambo_rt computation and delete the jobname folder is exsists

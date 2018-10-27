@@ -175,12 +175,12 @@ def runNscf(dic,nthreads,skip = False):
 
 def runP2y(dic):
     """
-    Perform p2y and execute yambo without options in al the .save folders of the nscf simulations
+    Perform p2y in all the .save folders of the nscf simulations
     """
     kval = dic.keys()
     kval.sort()
     for k in kval:
-        osString = "cd %s;p2y;yambo"%dic[k]['outFolder']
+        osString = "cd %s;p2y"%dic[k]['outFolder']
         print 'execute : '+osString
         os.system(osString)
 
@@ -190,7 +190,27 @@ def nscfOutFolderSplit(val):
     out = out.partition('_')[0]
     return out
 
-def buildYambo(dic):
+def updateSAVEfolder(inpFold,outFold):
+    #if the SAVE folder is already present erase it
+    if os.path.isdir(outFold+'/SAVE'):
+        osStr = "rm -r %s/SAVE"%outFold
+        print 'execute : ' + osStr
+        os.system(osStr)
+    #copy the SAVE folder
+    osStr = "cp -r %s/SAVE %s" %(inpFold,outFold)
+    print 'execute : ' + osStr
+    os.system(osStr)
+    #if the r_setup is already present erase it
+    if os.path.isfile(outFold+'/r_setup'):
+        osStr = "rm %s/r_setup"%outFold
+        print 'execute : ' + osStr
+        os.system(osStr)
+    #execute yambo without options in the outFold to build r_setup
+    osStr = "cd %s;mpirun -np 4 yambo"%outFold
+    print 'execute : ' + osStr
+    os.system(osStr)
+
+def buildYambo(dic,updateSAVE=False):
     """
     Take the nscfDict as input and build the yambo directory structure and
     the base yambo dictionary for a bunch of yambo computations.
@@ -201,18 +221,18 @@ def buildYambo(dic):
     yamboDic = {}
     for k in dic:
         yamboDic[k] = {}
-        folderName = nscfOutFolderSplit(dic[k]['outFolder'])
-        if not os.path.isdir('yambo/'+folderName):
-            os.mkdir('yambo/'+folderName)
-            #copy the SAVE folder
-            osString = "cp -r %s/SAVE yambo/%s" %(dic[k]['outFolder'],folderName)
-            print 'execute : ' + osString
-            os.system(osString)
+        folderName = 'yambo/'+nscfOutFolderSplit(dic[k]['outFolder'])
+        if not os.path.isdir(folderName):
+            print 'create folder ',folderName
+            os.mkdir(folderName)
+            updateSAVEfolder(dic[k]['outFolder'],folderName)
         else:
-            print 'yambo/'+folderName + ' already present'
+            print folderName + ' already present'
+            if updateSAVE:
+                updateSAVEfolder(dic[k]['outFolder'],folderName)
 
         #create the yambo dictionary with folder key
-        yamboDic[k] = {'folder' : 'yambo/'+folderName}
+        yamboDic[k] = {'folder' : folderName}
 
     return yamboDic
 
@@ -291,10 +311,14 @@ def parserArrayFromFile(fname):
     larray = [[] for i in range(len(lines))]
     for ind,l in enumerate(lines):
         larray[ind] = l.split()
-    #convert the string to double
+    #convert the string to double. If some elements is a string (it can happen in the 4.4 Yambo
+    #version in the output file of a bands calculation) remove it
     for row in range(len(larray)):
         for col in range(len(larray[row])):
-            larray[row][col] = float(larray[row][col])
+            try:
+                larray[row][col] = float(larray[row][col])
+            except ValueError,e:
+                del larray[row][col]
     return larray
 
 def parserHFout(fname):
@@ -304,14 +328,14 @@ def parserHFout(fname):
     larray = parserArrayFromFile(fname)
     KP = []
     BND = []
-    E0 = []
-    EHF = []
+    E0 = [] #DFT result
+    E = []  #Yambo result
     for rows,l in enumerate(larray):
         KP.append(l[0])
         BND.append(l[1])
         E0.append(l[2])
-        EHF.append(l[3])
-    return KP,BND,E0,EHF
+        E.append(l[3])
+    return {'kp':KP,'bnd':BND,'e0':E0,'e':E}
 
 def getHFresults(ydic):
     """
@@ -322,7 +346,23 @@ def getHFresults(ydic):
     for k in kpoints:
         for y in ydic[k]['hf'].values():
             print 'read file : ' + y['outputFile']
-            y['KP'],y['BND'],y['E0'],y['EHF'] = parserHFout(y['outputFile'])
+            y['results'] = parserHFout(y['outputFile'])
+
+def getBandGap(dic,bndHomo,bndLumo,kHomo,kLumo):
+    """"
+    Return the value of the bandGap = ELumo-EHomo computed at
+    kLumo and kHomo respectively.
+    """
+    ind = 0
+    for k,bnd in zip(dic['kp'],dic['bnd']):
+        if k == kHomo and bnd == bndHomo:
+            indHomo = ind
+        if k == kLumo and bnd == bndLumo:
+            indLumo = ind
+        ind+=1
+    EHomo = dic['e'][indHomo]
+    ELumo = dic['e'][indLumo]
+    return ELumo-EHomo
 
 def makeCOHSEXinput(fold,fname,gcomp,wg,wn,firstk,lastk,firstbnd,lastbnd):
     #-b static inverse dielectric matrix
@@ -376,19 +416,19 @@ def runCOHSEX(ydic,kconv,nthreads,skip = False):
 
 def parserCOHSEXout(fname):
     """"
-    Return a set of list with the output of the .hf file
+    Return a set of list with the output of the .qp chosex computation
     """
     larray = parserArrayFromFile(fname)
     KP = []
     BND = []
     E0 = []
-    EmE0 = []
+    E = []
     for rows,l in enumerate(larray):
         KP.append(l[0])
         BND.append(l[1])
         E0.append(l[2])
-        EmE0.append(l[3])
-    return KP,BND,E0,EmE0
+        E.append(l[2]+l[3])
+    return {'kp':KP,'bnd':BND,'e0':E0,'e':E}
 
 def getCOHSEXresults(ydic,kconv):
     """
@@ -397,7 +437,7 @@ def getCOHSEXresults(ydic,kconv):
     """
     for y in ydic[kconv]['cs'].values():
             print 'read file : ' + y['outputFile']
-            y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
+            y['results'] = parserCOHSEXout(y['outputFile'])
 
 def makePPinput(fold,fname,gcomp,wg,wn,gnbn,firstk,lastk,firstbnd,lastbnd):
     #-d dynamical inverse dielectric matrix
@@ -456,7 +496,7 @@ def getPPresults(ydic,kconv):
     """
     for y in ydic[kconv]['pp'].values():
             print 'read file : ' + y['outputFile']
-            y['KP'],y['BND'],y['E0'],y['EmE0'] = parserCOHSEXout(y['outputFile'])
+            y['results'] = parserCOHSEXout(y['outputFile'])
 
 def makeYPPbandsInput(kfold,study,firstbnd,lastbnd,bands_step,path):
     """"
@@ -477,12 +517,13 @@ def makeYPPbandsInput(kfold,study,firstbnd,lastbnd,bands_step,path):
     fname = kfold+'/ypp.in'
     y = YamboIn(filename=fname)
     y['BANDS_steps'] = bands_step
-    kbandrange = y['QPkrange'][0][:2] + [firstbnd,lastbnd]
-    y['QPkrange'] = [kbandrange,'']
+    y['BANDS_bands'] = [firstbnd,lastbnd]
     if study['jobName'] != 'lda':
         dbname = study['jobName']+'/ndb.QP'
         y['GfnQPdb'] = 'E < '+dbname
-    y['BKpts'] = path
+    y['BANDS_kpts'] = path
+    #alternatively if can specified in the format
+    #y['BANDS_path'] = "L GAMMA X"
     y.write(fname)
     # run again ypp -s b -V qp
     os.system(osStr)
