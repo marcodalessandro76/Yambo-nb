@@ -74,7 +74,7 @@ def makeTDinput(fold,fname,fieldDirection,fieldInt,fieldFreq,fieldWidth,RTstep,N
     y['RTBands'] = RTbands
     y.write(fold+'/'+fname)
 
-def runYambo_rt(folder,filename,jobname,nthreads):
+def runYambo_rt(folder,filename,jobname,mpi,omp):
     """
     Run a single Yambo_rt computation and delete the jobname folder is exsists
     """
@@ -83,7 +83,7 @@ def runYambo_rt(folder,filename,jobname,nthreads):
         print 'delete '+ jobDirPath
         os.system("rm -r %s"%jobDirPath)
     osString = "cd %s ; "%folder
-    osString += "mpirun -np %d yambo_rt -F %s -J %s -C %s"%(nthreads,filename,jobname,jobname)
+    osString += "OMP_NUM_THREADS=%d mpirun -np %d yambo_rt -F %s -J %s -C %s"%(omp,mpi,filename,jobname,jobname)
     print 'execute : '+osString
     os.system(osString)
     print 'done!'

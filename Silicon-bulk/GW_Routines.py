@@ -58,17 +58,16 @@ def buildScf(kpoints,ecut):
 
     return scfDict
 
-def runPw(inputFile,outputFile,nthreads):
+def runPw(inputFile,outputFile,mpi,omp):
     """
     Run a single Pw simulation.
     """
-    pw = 'pw.x'
-    runString =  "mpirun -np %d %s -inp %s > %s"%(nthreads,pw,inputFile,outputFile)
+    runString =  "OMP_NUM_THREADS=%d mpirun -np %d pw.x -inp %s > %s"%(omp,mpi,inputFile,outputFile)
     print 'execute : '+runString
     os.system(runString)
     print 'done!'
 
-def runScf(dic,nthreads,skip = False):
+def runScf(dic,mpi,omp,skip = False):
     """
     Run a bunch of scf simulations, one for each value of kpoints and ecut
     """
@@ -82,9 +81,9 @@ def runScf(dic,nthreads,skip = False):
                 if os.path.isfile(dic[k][e]['outputFile']):
                     print 'skip the computation for : '+dic[k][e]['outputFile']
                 else:
-                    runPw(dic[k][e]['inputFile'],dic[k][e]['outputFile'],nthreads)
+                    runPw(dic[k][e]['inputFile'],dic[k][e]['outputFile'],mpi,omp)
             else:
-                runPw(dic[k][e]['inputFile'],dic[k][e]['outputFile'],nthreads)
+                runPw(dic[k][e]['inputFile'],dic[k][e]['outputFile'],mpi,omp)
 
 
 # Parser of the QE output file to extract the total energy
@@ -158,7 +157,7 @@ def buildNscf(kpoints,nb,kconv,ecutconv):
 
     return dic
 
-def runNscf(dic,nthreads,skip = False):
+def runNscf(dic,mpi,omp,skip = False):
         """
         Run a bunch of nscf simulation, one for each value of kpoints
         """
@@ -169,9 +168,9 @@ def runNscf(dic,nthreads,skip = False):
                 if os.path.isfile(dic[k]['outputFile']):
                     print 'skip the computation for : '+dic[k]['outputFile']
                 else:
-                    runPw(dic[k]['inputFile'],dic[k]['outputFile'],nthreads)
+                    runPw(dic[k]['inputFile'],dic[k]['outputFile'],mpi,omp)
             else:
-                runPw(dic[k]['inputFile'],dic[k]['outputFile'],nthreads)
+                runPw(dic[k]['inputFile'],dic[k]['outputFile'],mpi,omp)
 
 def runP2y(dic):
     """
@@ -206,7 +205,7 @@ def updateSAVEfolder(inpFold,outFold):
         print 'execute : ' + osStr
         os.system(osStr)
     #execute yambo without options in the outFold to build r_setup
-    osStr = "cd %s;mpirun -np 4 yambo"%outFold
+    osStr = "cd %s;OMP_NUM_THREADS=1 mpirun -np 4 yambo"%outFold
     print 'execute : ' + osStr
     os.system(osStr)
 
@@ -267,7 +266,7 @@ def buildHF(ydic,gcomp,firstbnd,lastbnd):
             'jobName':jobname,
             'outputFile':ydic[k]['folder']+'/'+jobname+'/'+outfile}
 
-def runYambo(folder,filename,jobname,nthreads):
+def runYambo(folder,filename,jobname,mpi,omp):
     """
     Run a single Yambo computation and delete the jobname folder is exsists
     """
@@ -276,12 +275,12 @@ def runYambo(folder,filename,jobname,nthreads):
         print 'delete '+ jobDirPath
         os.system("rm -r %s"%jobDirPath)
     osString = "cd %s ; "%folder
-    osString += "mpirun -np %d yambo -F %s -J %s -C %s"%(nthreads,filename,jobname,jobname)
+    osString += "OMP_NUM_THREADS=%d mpirun -np %d yambo -F %s -J %s -C %s"%(omp,mpi,filename,jobname,jobname)
     print 'execute : '+osString
     os.system(osString)
     print 'done!'
 
-def runHF(ydic,nthreads,skip = False):
+def runHF(ydic,mpi,omp,skip = False):
     """
     Run a bunch of HF simulations
     """
@@ -294,9 +293,9 @@ def runHF(ydic,nthreads,skip = False):
                 if os.path.isfile(y['outputFile']):
                     print 'skip the computation for : '+y['outputFile']
                 else:
-                    runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+                    runYambo(folder,y['inputFile'],y['jobName'],mpi,omp)
             else:
-                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+                runYambo(folder,y['inputFile'],y['jobName'],mpi,omp)
 
 def parserArrayFromFile(fname):
     """"
@@ -400,7 +399,7 @@ def buildCOHSEX(ydic,kconv,G0Gconv,wgcomp,wnbnds,firstk,lastk,firstbnd,lastbnd):
     else:
         print 'k value %s is not present. Add this value to the nscf simulation list'%k
 
-def runCOHSEX(ydic,kconv,nthreads,skip = False):
+def runCOHSEX(ydic,kconv,mpi,omp,skip = False):
     """
     Run a bunch of CHOSEX simulations (without empties)
     """
@@ -410,9 +409,9 @@ def runCOHSEX(ydic,kconv,nthreads,skip = False):
             if os.path.isfile(y['outputFile']):
                 print 'skip the computation for : '+y['outputFile']
             else:
-                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+                runYambo(folder,y['inputFile'],y['jobName'],mpi,omp)
         else:
-            runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+            runYambo(folder,y['inputFile'],y['jobName'],mpi,omp)
 
 def parserCOHSEXout(fname):
     """"
@@ -475,7 +474,7 @@ def buildPP(ydic,kconv,G0Gconv,wgconv,wnbnconv,g0nb,firstk,lastk,firstbnd,lastbn
     else:
         print 'k value %s is not present. Add this value to the nscf simulation list'%k
 
-def runPP(ydic,kconv,nthreads,skip = False):
+def runPP(ydic,kconv,mpi,omp,skip = False):
     """
     Run a bunch of plasmon pole simulations
     """
@@ -485,9 +484,9 @@ def runPP(ydic,kconv,nthreads,skip = False):
             if os.path.isfile(y['outputFile']):
                 print 'skip the computation for : '+y['outputFile']
             else:
-                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+                runYambo(folder,y['inputFile'],y['jobName'],mpi,omp)
         else:
-                runYambo(folder,y['inputFile'],y['jobName'],nthreads)
+                runYambo(folder,y['inputFile'],y['jobName'],mpi,omp)
 
 def getPPresults(ydic,kconv):
     """
@@ -537,7 +536,7 @@ def buildYPPbands(kfold,study,firstbnd,lastbnd,bands_step,path):
     sJname = study['jobName']
     study['bnds'] = {'jobName' : sJname+'_bands' ,'outputFile' : 'o-'+sJname+'_bands.bands_interpolated'}
 
-def runYPP(kfold,filename,jobname,nthreads):
+def runYPP(kfold,filename,jobname):
     """
     Run a single YPP computation and delete the jobname folder is exsists
     """
@@ -545,15 +544,15 @@ def runYPP(kfold,filename,jobname,nthreads):
     if os.path.isdir(jobDirPath):
         print 'delete '+ jobDirPath
         os.system("rm -r %s"%jobDirPath)
-    osString = "cd %s; mpirun -np %d ypp -F %s -J %s -C %s"%(kfold,nthreads,filename,jobname,jobname)
+    osString = "cd %s; OMP_NUM_THREADS=1 mpirun -np 1 ypp -F %s -J %s -C %s"%(kfold,filename,jobname,jobname)
     print 'execute : '+osString
     os.system(osString)
     print 'done!'
 
-def runYPPbands(kfold,study,nthreads = 1):
+def runYPPbands(kfold,study):
     if 'bnds' in study:
         jobname = study['bnds']['jobName']
-        runYPP(kfold,'ypp.in',jobname,nthreads)
+        runYPP(kfold,'ypp.in',jobname)
     else:
         print "'bnds' key not found"
 
