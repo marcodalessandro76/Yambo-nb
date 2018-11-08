@@ -23,7 +23,7 @@ def removeTimeReversal(fname):
 
 def fixSymm(kfold,fieldDirection):
     """
-    Create the fixSymm folder (in the kfold path but only if it has not already
+    Create the FixSymm folder (in the kfold path but only if it is not already
     present) with the new SAVE folder compatible with the symmetries broken by
     the fieldDirection perturbation
     """
