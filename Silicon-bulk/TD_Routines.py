@@ -50,7 +50,7 @@ def fixSymm(kfold,fieldDirection):
         osStr = "cd %s; yambo"%fixSymmFold
         os.system(osStr)
     else:
-        print 'fixSymm folder already created'
+        print 'FixSymm folder already created'
     return fixSymmFold
 
 def makeTDinput(fold,fname,fieldDirection,fieldInt,fieldFreq,fieldWidth,RTstep,NETime,RTbands,RT_CPU):
@@ -90,6 +90,45 @@ def runYambo_rt(folder,filename,jobname,mpi,omp):
         os.system("rm -r %s"%jobDirPath)
     osString = "cd %s ; "%folder
     osString += "OMP_NUM_THREADS=%d mpirun -np %d yambo_rt -F %s -J %s -C %s"%(omp,mpi,filename,jobname,jobname)
+    print 'execute : '+osString
+    os.system(osString)
+    print 'done!'
+
+def makeYPP_rtOccupationInput(fold,RTbands,yppTimeStep):
+    """"
+    fold : the folder in which the input file is created
+    This function execute ypp_rt -n o e the ypp.in. Then load the input file in y with
+    y = YamboIn(filename=fname), modifies the parameters
+    and execute ypp -s b -V qp again to produce the correct final file (called ypp.in)
+    """
+    # if ypp.in exists is removed
+    if os.path.isfile(fold+'/ypp.in'):
+        osStr = "rm %s/ypp.in"%fold
+        print "remove file : %s/ypp.in"%fold
+        os.system(osStr)
+    # run ypp -s b -V qp to build the input file
+    osStr = "cd %s; ypp_rt -n o e -V qp"%fold
+    print osStr
+    os.system(osStr)
+    fname = fold+'/ypp.in'
+    y = YamboIn(filename=fname)
+    y['QPkrange'][0][3:5] = RTbands
+    y['TimeStep'][0] = 10.0
+    #print y
+    y.write(fname)
+    # run again ypp_rt
+    os.system(osStr)
+
+def runYPP_rt(fold,filename,jobname,outfold):
+    """
+    Run a single YPP_rt computation and delete the outfold folder is exsists
+    jobname : the name of the folder with the results of yambo_rt used as input
+    """
+    jobDirPath = fold+'/'+outfold
+    if os.path.isdir(jobDirPath):
+        print 'delete '+ jobDirPath
+        os.system("rm -r %s"%jobDirPath)
+    osString = "cd %s; OMP_NUM_THREADS=1 mpirun -np 1 ypp_rt -F %s -J %s -C %s"%(fold,filename,jobname,outfold)
     print 'execute : '+osString
     os.system(osString)
     print 'done!'
