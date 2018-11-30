@@ -53,8 +53,12 @@ def fixSymm(kfold,fieldDirection):
         print 'FixSymm folder already created'
     return fixSymmFold
 
+# new routines here.....
+
+
+
 def makeTDinput(fold,fname,fieldDirection,fieldInt,fieldFreq,fieldWidth,RTstep,NETime,RTbands,RT_CPU):
-    y = YamboIn('yambo_rt -Q -q p -v ip -V qp',folder=fold)
+    y = YamboIn('yambo_rt -q p -v ip -V qp',folder=fold)
     """
     Build the input file for a TD simulation in the "independt particle" approximation.
     Set the relevant parameters for the field and the simulation options.

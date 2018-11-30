@@ -250,7 +250,7 @@ def makeHFinput(fold,fname,exRL,firstbnd,lastbnd):
 def buildHF(ydic,gcomp,firstbnd,lastbnd):
     """
     Build the input file for a yambo HF computation and update the yambo dictionary
-    with the paramters of the choosen HF computations. Note that the inputFile field
+    with the parameters of the choosen HF computations. Note that the inputFile field
     does not include the path of the file which is specified in the folder field. This
     choice is due to the way in which yambo is called.
     """
