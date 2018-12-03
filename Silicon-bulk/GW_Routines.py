@@ -322,7 +322,7 @@ def parserArrayFromFile(fname):
 
 def parserHFout(fname):
     """"
-    Return a set of list with the output of the .hf file
+    Return a dictionary with the output of the .hf file
     """
     larray = parserArrayFromFile(fname)
     KP = []

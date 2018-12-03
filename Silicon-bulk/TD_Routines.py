@@ -1,4 +1,6 @@
 from yambopy import *
+import GW_Routines as GW
+from copy import deepcopy
 
 def modifyTimeReversalString(fname):
     with open(fname) as f:
@@ -53,86 +55,175 @@ def fixSymm(kfold,fieldDirection):
         print 'FixSymm folder already created'
     return fixSymmFold
 
-# new routines here.....
-
-
-
-def makeTDinput(fold,fname,fieldDirection,fieldInt,fieldFreq,fieldWidth,RTstep,NETime,RTbands,RT_CPU):
-    y = YamboIn('yambo_rt -q p -v ip -V qp',folder=fold)
+def make_rt_input_file(path,fname='rt_default.in',**kwargs):
     """
-    Build the input file for a TD simulation in the "independt particle" approximation.
-    Set the relevant parameters for the field and the simulation options.
+    Build the input file for a RT simulation in the independent particle approximation.
     """
-    # field paramters
-    y['Field1_kind'] = 'QSSIN'
-    y['Field1_pol'] = 'linear'
-    y['Field1_Dir'] = fieldDirection
-    y['Field1_Int'] = [fieldInt,'kWLm2']
-    y['Field1_Freq'] = [[fieldFreq,fieldFreq],'eV']
-    y['Field1_Width'] = [fieldWidth,'fs']
-    # simulation parameters
-    y['IOtime'] = [[1.0,5.0,0.5],'fs'] #(J,P,CARRIERs - GF - OUTPUT)
-    y['RTstep'] = [RTstep,'as']
-    y['NETime'] = [NETime,'fs']
-    y['RTBands'] = RTbands
-    # parameters from yambopy tutorial rt_si.py
-    y['GfnQP_Wv']   = [0.05,0.00,0.00]    # Constant damping valence
-    y['GfnQP_Wc']   = [0.05,0.00,0.00]    # Constant damping conduction
-    y['GfnQP_E']    = [0.00, 1.00, 1.00]  # [EXTQP BSK BSS] E parameters  (c/v) eV|adim|adim
+    y = YamboIn('yambo_rt -q p -v ip -V qp',folder=path)
+    for k,v in kwargs.iteritems():
+        y[k] = v
+    y.write(path+'/'+fname)
 
-    # parallelization parameters
-    y['RT_CPU'] = RT_CPU
-    y.write(fold+'/'+fname)
+def build_rt_dictionary(dic,path,rt_par):
+    """
+    Update the yambo dictionary with the parameters of the choosen RT computations and make the associated
+    RT input file. The outputFile name does not contain the .carriers or .external_field part since all the
+    output files can be managed in this way.
+    """
+    fieldInt = dic.keys()
+    for f in fieldInt:
+        dic_rt = deepcopy(rt_par)
+        dic_rt['Field1_Int'] = [f,'kWLm2']
+        radical = 'rt_int'+str(int(f))+'_freq'+str(rt_par['Field1_Freq'][0][0])+'_step'+str(rt_par['RTstep'][0])
+        inputFile = radical+'.in'
+        jobName = radical
+        outputFile = path+'/'+jobName+'/'+'o-'+radical
+        dic[f]['rt'] = {'inpf' : inputFile, 'jobn' : jobName, 'outf' : outputFile, 'parameters' : dic_rt}
 
-def runYambo_rt(folder,filename,jobname,mpi,omp):
+        make_rt_input_file(path,fname = inputFile, **dic_rt)
+
+def run_yambo_rt(path,filename,jobname,mpi,omp):
     """
     Run a single Yambo_rt computation and delete the jobname folder is exsists
     """
-    jobDirPath = folder+'/'+jobname
+    jobDirPath = path+'/'+jobname
     if os.path.isdir(jobDirPath):
         print 'delete '+ jobDirPath
         os.system("rm -r %s"%jobDirPath)
-    osString = "cd %s ; "%folder
+    osString = "cd %s ; "%path
     osString += "OMP_NUM_THREADS=%d mpirun -np %d yambo_rt -F %s -J %s -C %s"%(omp,mpi,filename,jobname,jobname)
-    print 'execute : '+osString
+    print 'execute : ',osString
     os.system(osString)
     print 'done!'
 
-def makeYPP_rtOccupationInput(fold,RTbands,yppTimeStep):
+def run_rt(dic,path,mpi,omp,skip = False):
+    """
+    Run a bunch of RT simulations
+    """
+    for f,y in dic.iteritems():
+        carriersOut = y['rt']['outf']+'.carriers'
+        if skip:
+            if os.path.isfile(carriersOut):
+                print 'skip the computation for : ',carriersOut
+            else:
+                run_yambo_rt(path,y['rt']['inpf'],y['rt']['jobn'],mpi,omp)
+        else:
+            run_yambo_rt(folder,y['rt']['inpf'],y['jobn'],mpi,omp)
+
+def parser_rt_carriers(fname):
+    """
+    Read the carriers outputfile of the RT simulation and return...
+    """
+    print 'parsing file : ',fname
+    larray = GW.parserArrayFromFile(fname)
+    time = []
+    dnElec = []
+    dnHoles = []
+    for l in larray:
+        time.append(l[0])
+        dnElec.append(l[2])
+        dnHoles.append(l[3])
+
+    return {'time':time,'dnElec':dnElec,'dnHoles':dnHoles}
+
+def parser_rt_external_field(fname):
+    """
+    Read the carriers outputfile of the RT simulation and return...
+    """
+    print 'parsing file : ',fname
+    larray = GW.parserArrayFromFile(fname)
+    time = []
+    eInt = []
+    fluence = []
+    for l in larray:
+        time.append(l[0])
+        eInt.append(l[7])
+        fluence.append(l[8])
+
+    return {'time':time,'field_int':eInt,'fluence':fluence}
+
+def get_rt_results(dic):
+    """
+    Update the yambo dictionary with the results of the RT simulation
+    """
+    fieldInt = dic.keys()
+    for f,y in dic.iteritems():
+        carriers_outf = y['rt']['outf']+'.carriers'
+        carriers_res = parser_rt_carriers(carriers_outf)
+        ext_field_outf = y['rt']['outf']+'.external_field'
+        ext_field_res = parser_rt_external_field(ext_field_outf)
+        y['rt']['results'] = {'time':carriers_res['time'],
+                              'field_int':ext_field_res['field_int'],
+                              'fluence':ext_field_res['fluence'],
+                              'dnElec':carriers_res['dnElec'],
+                              'dnHoles':carriers_res['dnHoles']
+                             }
+
+def make_ypp_rt_noe_input(path,rt_bands,ypp_time_step):
     """"
-    fold : the folder in which the input file is created
-    This function execute ypp_rt -n o e the ypp.in. Then load the input file in y with
-    y = YamboIn(filename=fname), modifies the parameters
-    and execute ypp -s b -V qp again to produce the correct final file (called ypp.in)
+    This function execute ypp_rt -n o and generate the file ypp.in in the path folder. Then load the input
+    file in y with y = YamboIn(filename=fname), modifies the parameters and execute ypp -s b -V qp again to
+    produce the correct final file
     """
     # if ypp.in exists is removed
-    if os.path.isfile(fold+'/ypp.in'):
-        osStr = "rm %s/ypp.in"%fold
-        print "remove file : %s/ypp.in"%fold
+    if os.path.isfile(path+'/ypp.in'):
+        osStr = "rm %s/ypp.in"%path
+        print "remove file : %s/ypp.in"%path
         os.system(osStr)
     # run ypp -s b -V qp to build the input file
-    osStr = "cd %s; ypp_rt -n o e -V qp"%fold
+    osStr = "cd %s; ypp_rt -n o e -V qp"%path
     print osStr
     os.system(osStr)
-    fname = fold+'/ypp.in'
-    y = YamboIn(filename=fname)
-    y['QPkrange'][0][3:5] = RTbands
-    y['TimeStep'][0] = 10.0
-    #print y
+    fname = path+'/ypp.in'
+    y = YamboIn(filename=path+'/ypp.in')
+    y['QPkrange'][0][3:5] = rt_bands
+    y['TimeStep'][0] = ypp_time_step
     y.write(fname)
     # run again ypp_rt
     os.system(osStr)
 
-def runYPP_rt(fold,filename,jobname,outfold):
+def build_ypp_noe(path,dic,ypp_time_step=10.0):
+    make_ypp_rt_noe_input(path,dic['parameters']['RTBands'],ypp_time_step)
+
+    radical = 'int'+str(int(dic['parameters']['Field1_Int'][0]))+'_freq'+str(dic['parameters']['Field1_Freq'][0][0])+'_step'+str(dic['parameters']['RTstep'][0])
+    inputFile = 'ypp_noe_'+radical+'.in'
+    outputFile = path+'/'+'ypp_noe_'+radical+'/'+'o-rt_'+radical+'.YPP-RT_occupations_DATA'
+    dic['noe'] = {'jobn':'ypp_noe_'+radical,'inpf':inputFile,'outf':outputFile}
+
+def run_ypp_rt(path,filename,jobname,outfold):
     """
-    Run a single YPP_rt computation and delete the outfold folder is exsists
+    Run a single YPP_rt computation in the path folder and delete the outfold folder is exsists
     jobname : the name of the folder with the results of yambo_rt used as input
     """
-    jobDirPath = fold+'/'+outfold
-    if os.path.isdir(jobDirPath):
-        print 'delete '+ jobDirPath
-        os.system("rm -r %s"%jobDirPath)
-    osString = "cd %s; OMP_NUM_THREADS=1 mpirun -np 1 ypp_rt -F %s -J %s -C %s"%(fold,filename,jobname,outfold)
+    outDirPath = path+'/'+outfold
+    if os.path.isdir(outDirPath):
+        print 'delete '+ outDirPath
+        os.system("rm -r %s"%outDirPath)
+    osString = "cd %s; OMP_NUM_THREADS=1 mpirun -np 1 ypp_rt -F %s -J %s -C %s"%(path,filename,jobname,outfold)
     print 'execute : '+osString
     os.system(osString)
     print 'done!'
+
+def run_noe(path,dic):
+    jobname = dic['jobn']
+    outfold = dic['noe']['jobn']
+    run_ypp_rt(path,'ypp.in',jobname,outfold)
+
+def parser_ypp_noe(fname):
+    """
+    Read the ypp_noe outputfile and return the energy and the occupations
+    at the latest time
+    """
+    print 'parsing file : ',fname
+    larray = GW.parserArrayFromFile(fname)
+    energy = []
+    occupations = []
+    for l in larray:
+        energy.append(l[0])
+        occupations.append(l[-1])
+
+    return {'energy':energy,'occupations':occupations}
+
+def get_ypp_noe_results(dic):
+    results = parser_ypp_noe(dic['noe']['outf'])
+    dic['noe']['results'] = results
