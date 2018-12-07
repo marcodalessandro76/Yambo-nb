@@ -2,6 +2,19 @@ from yambopy import *
 import GW_Routines as GW
 from copy import deepcopy
 
+def readLinesFromFile(fname):
+    with open(fname) as f:
+        lines = []
+        for l in f:
+            lines.append(l)
+    return lines
+
+def writeLines(fname,lines):
+    f = open(fname,'w')
+    for l in lines:
+        f.write(l)
+        f.close
+
 def modifyTimeReversalString(fname):
     with open(fname) as f:
         lines = []
@@ -13,14 +26,13 @@ def modifyTimeReversalString(fname):
                 lines.append(l)
     return lines
 
-def writeLines(fname,lines):
-    f = open(fname,'w')
-    for l in lines:
-        f.write(l)
-        f.close
-
 def removeTimeReversal(fname):
     lines = modifyTimeReversalString(fname)
+    writeLines(fname,lines)
+
+def addStringToFile(fname,string):
+    lines = readLinesFromFile(fname)
+    lines.append(string)
     writeLines(fname,lines)
 
 def fixSymm(kfold,fieldDirection):
@@ -93,6 +105,7 @@ def run_yambo_rt(path,filename,jobname,mpi,omp):
     osString = "cd %s ; "%path
     osString += "OMP_NUM_THREADS=%d mpirun -np %d yambo_rt -F %s -J %s -C %s"%(omp,mpi,filename,jobname,jobname)
     print 'execute : ',osString
+
     os.system(osString)
     print 'done!'
 
@@ -112,7 +125,7 @@ def run_rt(dic,path,mpi,omp,skip = False):
 
 def parser_rt_carriers(fname):
     """
-    Read the carriers outputfile of the RT simulation and return...
+    Read the carriers outputfile of the RT simulation
     """
     print 'parsing file : ',fname
     larray = GW.parserArrayFromFile(fname)
@@ -128,7 +141,7 @@ def parser_rt_carriers(fname):
 
 def parser_rt_external_field(fname):
     """
-    Read the carriers outputfile of the RT simulation and return...
+    Read the eternal_field outputfile of the RT simulation
     """
     print 'parsing file : ',fname
     larray = GW.parserArrayFromFile(fname)
@@ -227,3 +240,52 @@ def parser_ypp_noe(fname):
 def get_ypp_noe_results(dic):
     results = parser_ypp_noe(dic['noe']['outf'])
     dic['noe']['results'] = results
+
+def make_cs_rt_input(path,fname = 'cs_default.in',**kwargs):
+    y = YamboIn('yambo_rt -b -k hartee -g n -p c -V qp',folder=path)
+    for k,v in kwargs.iteritems():
+        y[k] = v
+    y.write(path+'/'+fname)
+
+def build_cs_rt(dic,path,par,time = 100):
+    """
+    Update the yambo dictionary with the key associated to the cs computation.Add to the par
+    dictionary the reference to the neq carriers and make the input file
+    """
+    for f,y in dic.iteritems():
+        rt_par = y['rt']['parameters']
+        radical  = 'cs_int'+str(int(f))+'_freq'+str(rt_par['Field1_Freq'][0][0])+'_time'+str(time)
+        inputFile = radical+'.in'
+        jobName = radical
+        outputFile = path+'/'+radical+'/'+'o-'+radical+'.qp'
+        y['cs'] = {}
+        y['cs'][time] = {'inpf' : inputFile, 'jobn' : jobName, 'outf' : outputFile}
+
+        par['GfnRTdb'] = "f @ %s fs < %s/ndb.RT_carriers"%(time,y['rt']['jobn'])
+        par['XfnRTdb'] = "f @ %s fs < %s/ndb.RT_carriers"%(time,y['rt']['jobn'])
+
+        make_cs_rt_input(path,fname = inputFile,**par)
+
+def run_cs_rt(dic,path,mpi,omp,skip = False):
+    """
+    Run a bunch of cs RT simulations
+    """
+    for f,y in dic.iteritems():
+        val = y['cs'].values()[0] #extract the dictionary associated to the time key
+        if skip:
+            if os.path.isfile(val['outf']):
+                print 'skip the computation for : ',val['outf']
+            else:
+                run_yambo_rt(path,val['inpf'],val['jobn'],mpi,omp)
+        else:
+            run_yambo_rt(folder,y['cs']['inpf'],val['jobn'],mpi,omp)
+
+def get_cs_rt_results(dic):
+    """
+    Reads the output of the cs RT calculations and add the appropriate fields in the yambo
+    dictionary
+    """
+    for f,y in dic.iteritems():
+        val = y['cs'].values()[0] #extract the dictionary associated to the time key
+        print 'read file : ', val['outf']
+        y['cs']['results'] = GW.parserCOHSEXout(val['outf'])
